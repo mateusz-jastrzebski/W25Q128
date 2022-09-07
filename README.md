@@ -1,6 +1,4 @@
-Please wait, it's an update of W25Q16 library
-
-in build.. wait please
+( oui je sais, j'y ai été à la pelleteuse pour modifier le fork, mais je tenais à garder la trace de la version originale 16Mbits, tout en y ajoutant mon lot de modifs )
 
 
 
