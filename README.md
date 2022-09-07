@@ -1,5 +1,4 @@
 Please wait, it's an update of W25Q16 library
-
 in build.. wait please
 
 Arduino library for the Winbond W25Q128 Serial Flash.
