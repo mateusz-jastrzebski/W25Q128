@@ -11,7 +11,7 @@
 * SPI_MODE3, ensures the flash is not in low power mode, and
 * that flash write is disabled.
 */
-void W25Q128::init(int FLASH_SS){
+void W25Q128::init(int8_t FLASH_SS){
 	// Argument The Slave Select or Chip Select pin used by Arduino to select W25Q128.
 	pinMode(FLASH_SS, OUTPUT);
 	digitalWrite(FLASH_SS, HIGH);
@@ -28,13 +28,13 @@ void W25Q128::init(int FLASH_SS){
 * 65536 pages with 256 bytes in a page. Both page and byte addresses
 * start at 0. Page ends at address 65535 and page address ends at 255.
 */
-byte W25Q128::read(unsigned int page, byte pageAddress){
+byte W25Q128::read(uint16_t page, byte adress){
 	// Arguments page and adress to begin reading
 	digitalWrite(_FLASH_SS, LOW);
 	SPI.transfer(READ_DATA);
 	SPI.transfer((page >> 8) & 0xFF);
 	SPI.transfer((page >> 0) & 0xFF);
-	SPI.transfer(pageAddress);
+	SPI.transfer(adress);
 	byte val = SPI.transfer(0);
 	digitalWrite(_FLASH_SS, HIGH);
 	notBusy();
@@ -46,14 +46,14 @@ byte W25Q128::read(unsigned int page, byte pageAddress){
 * 65536 pages with 256 bytes in a page. Both page and byte addresses
 * start at 0. Page ends at address 65535 and page address ends at 255.
 */
-void W25Q128::write(unsigned int page, byte pageAddress, byte val){
+void W25Q128::write(uint16_t page, byte adress, byte val){
 	// Arguments page and adress to begin writing
 	writeEnable();
 	digitalWrite(_FLASH_SS, LOW);
 	SPI.transfer(PAGE_PROGRAM);
 	SPI.transfer((page >> 8) & 0xFF);
 	SPI.transfer((page >> 0) & 0xFF);
-	SPI.transfer(pageAddress);
+	SPI.transfer(adress);
 	SPI.transfer(val);
 	digitalWrite(_FLASH_SS, HIGH);
 	notBusy();
@@ -65,14 +65,14 @@ void W25Q128::write(unsigned int page, byte pageAddress, byte val){
 * consecutively. Both page and byte addresses start at 0. Page 
 * ends at address 65535 and page address ends at 255.
 */
-void W25Q128::initStreamWrite(unsigned int page, byte pageAddress){
+void W25Q128::initStreamWrite(uint16_t page, byte adress){
 	// Arguments page and adress to begin writing
 	writeEnable();
 	digitalWrite(_FLASH_SS, LOW);
 	SPI.transfer(PAGE_PROGRAM);
 	SPI.transfer((page >> 8) & 0xFF);
 	SPI.transfer((page >> 0) & 0xFF);
-	SPI.transfer(pageAddress);
+	SPI.transfer(adress);
 }
 
 /*
@@ -98,13 +98,13 @@ void W25Q128::closeStreamWrite(){
 * consecutively. Both page and byte addresses start at 0. Page 
 * ends at address 65535 and page address ends at 255.
 */
-void W25Q128::initStreamRead(unsigned int page, byte pageAddress){
+void W25Q128::initStreamRead(uint16_t page, byte adress){
 	// Arguments page and adress to begin reading
 	digitalWrite(_FLASH_SS, LOW);
 	SPI.transfer(READ_DATA);
 	SPI.transfer((page >> 8) & 0xFF);
 	SPI.transfer((page >> 0) & 0xFF);
-	SPI.transfer(pageAddress);
+	SPI.transfer(adress);
 }
 
 /*
