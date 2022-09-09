@@ -16,13 +16,13 @@
 
 class W25Q128{
 public:
-  void init(int FLASH_SS);
-  void write(unsigned int page, byte pageAddress, byte val);
-  byte read(unsigned int page, byte pageAddress);
-  void initStreamWrite(unsigned int page, byte pageAddress);
+  void init(int8_t FLASH_SS);
+  void write(uint16_t page, byte adress, byte val);
+  byte read(uint16_t page, byte adress);
+  void initStreamWrite(uint16_t page, byte adress);
   void streamWrite(byte val);
   void closeStreamWrite();
-  void initStreamRead(unsigned int page, byte pageAddress);
+  void initStreamRead(uint16_t page, byte adress);
   byte streamRead();
   void closeStreamRead();
   void powerDown();
