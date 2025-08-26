@@ -1,212 +1,214 @@
-// W25Q128.cpp - Arduino library for communicating with the Winbond W25Q128 Serial Flash.
-// v.16bits by Created by Derek Evans, July 17, 2016. // edit to v.128bits by msnbrest 2022-09-06
-
-#include "Arduino.h"
 #include "W25Q128.h"
 
-/*
-* Initializes the W25Q128 by setting the input slave select pin
-* as OUTPUT and writing it HIGH. Also initializes the SPI bus,
-* sets the SPI bit order to MSBFIRST and the SPI data mode to 
-* SPI_MODE3, ensures the flash is not in low power mode, and
-* that flash write is disabled.
-*/
-void W25Q128::init(int8_t FLASH_SS){
-	// Argument The Slave Select or Chip Select pin used by Arduino to select W25Q128.
-	pinMode(FLASH_SS, OUTPUT);
-	digitalWrite(FLASH_SS, HIGH);
-	_FLASH_SS = FLASH_SS;
-	SPI.begin();
-	SPI.setBitOrder(MSBFIRST);
-	SPI.setDataMode(SPI_MODE3);
-	releasePowerDown();
-	writeDisable();
+// Helper to read a single byte over SPI (full-duplex) sending a dummy byte
+static inline uint8_t spi_xfer(spi_inst_t *spi, uint8_t v) {
+    uint8_t rx;
+    spi_write_read_blocking(spi, &v, &rx, 1);
+    return rx;
 }
 
-/*
-* Reads a byte from the flash page and page address. The W25Q128 has
-* 65536 pages with 256 bytes in a page. Both page and byte addresses
-* start at 0. Page ends at address 65535 and page address ends at 255.
-*/
-byte W25Q128::read(uint16_t page, byte adress){
-	// Arguments page and adress to begin reading
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(READ_DATA);
-	SPI.transfer((page >> 8) & 0xFF);
-	SPI.transfer((page >> 0) & 0xFF);
-	SPI.transfer(adress);
-	byte val = SPI.transfer(0);
-	digitalWrite(_FLASH_SS, HIGH);
-	notBusy();
-	return val;
+void W25Q128::init(spi_inst_t *spi, uint cs_gpio) {
+    m_spi = spi;
+    m_cs = cs_gpio;
+    gpio_init(m_cs);
+    gpio_set_dir(m_cs, GPIO_OUT);
+    gpio_put(m_cs, 1);
+    // (Assumes SPI already configured globally with correct mode 0)
+    releasePowerDown();
+    writeDisable();
 }
 
-/*
-* Writes a byte to the flash page and page address. The W25Q128 has
-* 65536 pages with 256 bytes in a page. Both page and byte addresses
-* start at 0. Page ends at address 65535 and page address ends at 255.
-*/
-void W25Q128::write(uint16_t page, byte adress, byte val){
-	// Arguments page and adress to begin writing
-	writeEnable();
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(PAGE_PROGRAM);
-	SPI.transfer((page >> 8) & 0xFF);
-	SPI.transfer((page >> 0) & 0xFF);
-	SPI.transfer(adress);
-	SPI.transfer(val);
-	digitalWrite(_FLASH_SS, HIGH);
-	notBusy();
-	writeDisable();
+uint8_t W25Q128::read(uint16_t page, uint8_t address) {
+    uint32_t addr = ((uint32_t)page << 8) | address; // 24-bit address
+    cs_low();
+    spi_xfer(m_spi, W25Q_READ_DATA);
+    uint8_t a2 = (addr >> 16) & 0xFF;
+    uint8_t a1 = (addr >> 8) & 0xFF;
+    uint8_t a0 = (addr >> 0) & 0xFF;
+    spi_xfer(m_spi, a2);
+    spi_xfer(m_spi, a1);
+    spi_xfer(m_spi, a0);
+    uint8_t val = spi_xfer(m_spi, 0x00);
+    cs_high();
+    waitWhileBusy();
+    return val;
 }
 
-/*
-* Initializes flash for stream write, e.g. write more than one byte
-* consecutively. Both page and byte addresses start at 0. Page 
-* ends at address 65535 and page address ends at 255.
-*/
-void W25Q128::initStreamWrite(uint16_t page, byte adress){
-	// Arguments page and adress to begin writing
-	writeEnable();
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(PAGE_PROGRAM);
-	SPI.transfer((page >> 8) & 0xFF);
-	SPI.transfer((page >> 0) & 0xFF);
-	SPI.transfer(adress);
+void W25Q128::write(uint16_t page, uint8_t address, uint8_t val) {
+    uint32_t addr = ((uint32_t)page << 8) | address;
+    writeEnable();
+    cs_low();
+    spi_xfer(m_spi, W25Q_PAGE_PROGRAM);
+    spi_xfer(m_spi, (addr >> 16) & 0xFF);
+    spi_xfer(m_spi, (addr >> 8) & 0xFF);
+    spi_xfer(m_spi, (addr >> 0) & 0xFF);
+    spi_xfer(m_spi, val);
+    cs_high();
+    waitWhileBusy();
+    writeDisable();
 }
 
-/*
-* Writes a byte to the W25Q128. Must be first called after 
-* initStreamWrite and then consecutively to write multiple bytes.
-*/
-void W25Q128::streamWrite(byte val){
-	// Argument byte writed to the flash.
-	SPI.transfer(val);
+void W25Q128::initStreamWrite(uint16_t page, uint8_t address) {
+    uint32_t addr = ((uint32_t)page << 8) | address;
+    writeEnable();
+    cs_low();
+    spi_xfer(m_spi, W25Q_PAGE_PROGRAM);
+    spi_xfer(m_spi, (addr >> 16) & 0xFF);
+    spi_xfer(m_spi, (addr >> 8) & 0xFF);
+    spi_xfer(m_spi, (addr >> 0) & 0xFF);
 }
 
-/*
-* Close the stream write. Must be called after the last call to streamWrite.
-*/
-void W25Q128::closeStreamWrite(){
-	digitalWrite(_FLASH_SS, HIGH);
-	notBusy();
-	writeDisable();
+void W25Q128::streamWrite(uint8_t val) {
+    spi_xfer(m_spi, val);
 }
 
-/*
-* Initializes flash for stream read, e.g. read more than one byte
-* consecutively. Both page and byte addresses start at 0. Page 
-* ends at address 65535 and page address ends at 255.
-*/
-void W25Q128::initStreamRead(uint16_t page, byte adress){
-	// Arguments page and adress to begin reading
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(READ_DATA);
-	SPI.transfer((page >> 8) & 0xFF);
-	SPI.transfer((page >> 0) & 0xFF);
-	SPI.transfer(adress);
+void W25Q128::closeStreamWrite() {
+    cs_high();
+    waitWhileBusy();
+    writeDisable();
 }
 
-/*
-* Reads a byte from the W25Q128. Must be first called after 
-* initStreamRead and then consecutively to read multiple bytes.
-*/
-byte W25Q128::streamRead(){
-	return SPI.transfer(0);
+void W25Q128::initStreamRead(uint16_t page, uint8_t address) {
+    uint32_t addr = ((uint32_t)page << 8) | address;
+    cs_low();
+    spi_xfer(m_spi, W25Q_READ_DATA);
+    spi_xfer(m_spi, (addr >> 16) & 0xFF);
+    spi_xfer(m_spi, (addr >> 8) & 0xFF);
+    spi_xfer(m_spi, (addr >> 0) & 0xFF);
 }
 
-/*
-* Close the stream read. Must be called after the last call to streamRead.
-*/
-void W25Q128::closeStreamRead(){
-	digitalWrite(_FLASH_SS, HIGH);
-	notBusy();
+uint8_t W25Q128::streamRead() {
+    return spi_xfer(m_spi, 0x00);
 }
 
-/*
-* Puts the flash in its low power mode.
-*/
-void W25Q128::powerDown(){
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(POWER_DOWN);
-	digitalWrite(_FLASH_SS, HIGH);
-	notBusy();
+void W25Q128::closeStreamRead() {
+    cs_high();
+    waitWhileBusy();
 }
 
-/*
-* Releases the flash from its low power mode. Flash cannot be in 
-* low power mode to perform read/write operations.
-*/
-void W25Q128::releasePowerDown(){
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(RELEASE_POWER_DOWN);
-	digitalWrite(_FLASH_SS, HIGH);
-	notBusy();
+void W25Q128::powerDown() {
+    cs_low();
+    spi_xfer(m_spi, W25Q_POWER_DOWN);
+    cs_high();
+    waitWhileBusy();
 }
 
-/*
-* Erases all data from the flash.
-*/
-void W25Q128::chipErase(){
-	writeEnable();
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(CHIP_ERASE);
-	digitalWrite(_FLASH_SS, HIGH);
-	notBusy();
-	writeDisable();
+void W25Q128::releasePowerDown() {
+    cs_low();
+    spi_xfer(m_spi, W25Q_RELEASE_POWER_DOWN);
+    cs_high();
+    waitWhileBusy();
 }
 
-/*
-* Reads the manufacturer ID from the W25Q128. Should return 0xEF.
-*/
-byte W25Q128::manufacturerID(){
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(MANUFACTURER_ID);
-	SPI.transfer(0);
-	SPI.transfer(0);
-	SPI.transfer(0);
-	byte val = SPI.transfer(0);
-	digitalWrite(_FLASH_SS, HIGH);
-	notBusy();
-	return val;
+void W25Q128::chipErase() {
+    writeEnable();
+    cs_low();
+    spi_xfer(m_spi, W25Q_CHIP_ERASE);
+    cs_high();
+    waitWhileBusy();
+    writeDisable();
 }
 
-
-
-// # Private Methods
-
-/*
-* Halts operation until the flash is finished with its 
-* write/erase operation. Bit 0 of Status Register 1 of the 
-* W25Q128 is 1 if the chip is busy with a write/erase operation. 
-*/
-void W25Q128::notBusy(){
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(READ_STATUS_REGISTER_1);
-	while(bitRead(SPI.transfer(0),0) & 1){}
-	digitalWrite(_FLASH_SS, HIGH);
+void W25Q128::beginChipErase() {
+    writeEnable();
+    cs_low();
+    spi_xfer(m_spi, W25Q_CHIP_ERASE);
+    cs_high();
+    // do not wait; caller will poll isBusy()
 }
 
-/*
-* Sets Bit 1 of Status Register 1. Bit 1 is the write enable 
-* latch bit of the status register. This bit must be set prior 
-* to every write/erase operation. 
-*/
-void W25Q128::writeEnable(){
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(WRITE_ENABLE);
-	digitalWrite(_FLASH_SS, HIGH);
-	notBusy();
+bool W25Q128::isBusy() {
+    return (readStatus1() & 0x01) != 0; // WIP bit
 }
 
-/*
-* Clears Bit 1 of Status Register 1. Bit 1 is the write enable 
-* latch bit of the status register. Clearing this bit prevents 
-* the flash from being written or erased. 
-*/
-void W25Q128::writeDisable(){
-	digitalWrite(_FLASH_SS, LOW);
-	SPI.transfer(WRITE_DISABLE);
-	digitalWrite(_FLASH_SS, HIGH);
-	notBusy();
+void W25Q128::sectorErase(uint32_t addr) {
+    // addr is absolute flash address (must be 4KB aligned)
+    writeEnable();
+    cs_low();
+    spi_xfer(m_spi, W25Q_SECTOR_ERASE);
+    spi_xfer(m_spi, (addr >> 16) & 0xFF);
+    spi_xfer(m_spi, (addr >> 8) & 0xFF);
+    spi_xfer(m_spi, (addr >> 0) & 0xFF);
+    cs_high();
+    waitWhileBusy();
+    writeDisable();
+}
+
+uint8_t W25Q128::manufacturerID() {
+    cs_low();
+    spi_xfer(m_spi, W25Q_MANUFACTURER_ID);
+    spi_xfer(m_spi, 0x00); // dummy 3 bytes address per JEDEC ID CMD 0x90
+    spi_xfer(m_spi, 0x00);
+    spi_xfer(m_spi, 0x00);
+    uint8_t mid = spi_xfer(m_spi, 0x00); // manufacturer ID
+    cs_high();
+    waitWhileBusy();
+    return mid;
+}
+
+void W25Q128::writeBuffer(uint32_t addr, const uint8_t *data, uint32_t len) {
+    while (len) {
+        uint32_t page_off = addr & (PAGE_SIZE - 1);
+        uint32_t space = PAGE_SIZE - page_off;
+        uint32_t chunk = (len < space) ? len : space;
+        writeEnable();
+        cs_low();
+        spi_xfer(m_spi, W25Q_PAGE_PROGRAM);
+        spi_xfer(m_spi, (addr >> 16) & 0xFF);
+        spi_xfer(m_spi, (addr >> 8) & 0xFF);
+        spi_xfer(m_spi, (addr >> 0) & 0xFF);
+        spi_write_blocking(m_spi, data, chunk);
+        cs_high();
+        waitWhileBusy();
+        writeDisable();
+        addr += chunk;
+        data += chunk;
+        len -= chunk;
+    }
+}
+
+void W25Q128::readBuffer(uint32_t addr, uint8_t *data, uint32_t len) {
+    while (len) {
+        uint32_t chunk = len; // can read across boundary, but limit to, say, 1024
+        if (chunk > 1024) chunk = 1024;
+        cs_low();
+        spi_xfer(m_spi, W25Q_READ_DATA);
+        spi_xfer(m_spi, (addr >> 16) & 0xFF);
+        spi_xfer(m_spi, (addr >> 8) & 0xFF);
+        spi_xfer(m_spi, (addr >> 0) & 0xFF);
+        spi_read_blocking(m_spi, 0xFF, data, chunk);
+        cs_high();
+        addr += chunk;
+        data += chunk;
+        len -= chunk;
+    }
+}
+
+uint8_t W25Q128::readStatus1() {
+    cs_low();
+    spi_xfer(m_spi, W25Q_READ_STATUS_REGISTER_1);
+    uint8_t status = spi_xfer(m_spi, 0x00);
+    cs_high();
+    return status;
+}
+
+void W25Q128::writeEnable() {
+    cs_low();
+    spi_xfer(m_spi, W25Q_WRITE_ENABLE);
+    cs_high();
+}
+
+void W25Q128::writeDisable() {
+    cs_low();
+    spi_xfer(m_spi, W25Q_WRITE_DISABLE);
+    cs_high();
+}
+
+void W25Q128::waitWhileBusy() {
+    // Poll WIP bit (bit0) of status register 1
+    while (true) {
+        uint8_t s = readStatus1();
+        if ((s & 0x01) == 0) break;
+        tight_loop_contents();
+    }
 }
