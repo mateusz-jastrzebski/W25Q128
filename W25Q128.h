@@ -45,6 +45,8 @@ public:
     void writeBuffer(uint32_t addr, const uint8_t *data, uint32_t len);
     void readBuffer(uint32_t addr, uint8_t *data, uint32_t len);
     void sectorErase(uint32_t addr); // 4KB sector erase (blocking)
+    void beginSectorErase(uint32_t addr); // non-blocking sector erase start
+    void beginPageProgram(uint32_t addr, const uint8_t *data, uint32_t len); // non-blocking page (<=256, single page)
     static constexpr uint32_t TOTAL_SIZE_BYTES = 16u * 1024u * 1024u; // 128Mbit
     static constexpr uint32_t PAGE_SIZE = 256; // bytes
 

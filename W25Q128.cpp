@@ -134,6 +134,36 @@ void W25Q128::sectorErase(uint32_t addr) {
     writeDisable();
 }
 
+void W25Q128::beginSectorErase(uint32_t addr) {
+    writeEnable();
+    cs_low();
+    spi_xfer(m_spi, W25Q_SECTOR_ERASE);
+    spi_xfer(m_spi, (addr >> 16) & 0xFF);
+    spi_xfer(m_spi, (addr >> 8) & 0xFF);
+    spi_xfer(m_spi, (addr >> 0) & 0xFF);
+    cs_high();
+    // caller polls isBusy()
+}
+
+void W25Q128::beginPageProgram(uint32_t addr, const uint8_t *data, uint32_t len) {
+    if (len == 0) return;
+    if (len > PAGE_SIZE) len = PAGE_SIZE; // clamp
+    // Ensure it does not cross page boundary
+    uint32_t page_off = addr & (PAGE_SIZE - 1);
+    if (page_off + len > PAGE_SIZE) {
+        len = PAGE_SIZE - page_off;
+    }
+    writeEnable();
+    cs_low();
+    spi_xfer(m_spi, W25Q_PAGE_PROGRAM);
+    spi_xfer(m_spi, (addr >> 16) & 0xFF);
+    spi_xfer(m_spi, (addr >> 8) & 0xFF);
+    spi_xfer(m_spi, (addr >> 0) & 0xFF);
+    spi_write_blocking(m_spi, data, len);
+    cs_high();
+    // No wait here; caller must poll isBusy() then optionally writeDisable() if desired (not strictly required after each op)
+}
+
 uint8_t W25Q128::manufacturerID() {
     cs_low();
     spi_xfer(m_spi, W25Q_MANUFACTURER_ID);
